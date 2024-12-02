@@ -1,0 +1,19 @@
+{
+  "name": "savecrypto",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": " nodemon src/index.js"
+  },
+  "keywords": [],
+  "author": "Chimdi",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.4",
+    "nodemon": "^3.1.7",
+    "readline-sync": "^1.4.10"
+  }
+}

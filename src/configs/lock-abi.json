@@ -1,0 +1,6 @@
+[
+    "function lockTokens(uint256 amount) external",
+    "function withdrawTokens() external",
+    "function lockTime(address) external view returns (uint256)",
+    "function lockedAmount(address) external view returns (uint256)"
+]
