@@ -1,11 +1,11 @@
 [
-    "function lockTokens(uint256 amount, uint256 durationInDays, uint256 dailyInterestRate) external",
+    "function lockTokens(uint256 amount, uint256 durationInDays, uint256 dailyWithdrawalRate) external",
     "function withdrawTokens(uint256 lockIndex) external",
-    "function claimInterest(uint256 lockIndex) external",
+    "function withdrawDaily(uint256 lockIndex) external",
     "function withdrawSavings() external",
-    "function getPendingInterest(address user, uint256 lockIndex) external view returns (uint256 mainInterest, uint256 savingsInterest)",
+    "function getAvailableWithdrawal(address user, uint256 lockIndex) external view returns (uint256 mainWithdrawal, uint256 savingsWithdrawal)",
     "function getUserLocksCount(address user) external view returns (uint256)",
-    "function getLockDetails(address user, uint256 lockIndex) external view returns (uint256 amount, uint256 lockTime, uint256 unlockTime, uint256 dailyInterestRate, uint256 lastClaimTime, bool active)",
+    "function getLockDetails(address user, uint256 lockIndex) external view returns (uint256 amount, uint256 lockTime, uint256 unlockTime, uint256 dailyWithdrawalRate, uint256 lastWithdrawTime, uint256 totalWithdrawn, bool active)",
     "function getActiveLocks(address user) external view returns (uint256[])",
     "function savingsBalance(address) external view returns (uint256)",
     "function savingsUnlockTime(address) external view returns (uint256)"
