@@ -1,8 +1,12 @@
 ---
 
-# TokenLock CLI: Interaction with Smart Contract on AssetChain
+# Enhanced TokenLock CLI: Advanced Fund Locking with Interest and Savings
 
-This project allows you to interact with a smart contract for locking and redeeming USDT tokens on the AssetChain network. You can approve, lock, redeem tokens, and check the status of your locked funds using simple CLI commands.
+This project allows you to interact with an enhanced smart contract for locking USDT tokens on the AssetChain network with advanced features including:
+- **Custom lock duration** - Specify how long you want to lock your funds
+- **Multiple locks** - Create and manage multiple lock instances simultaneously
+- **Daily interest** - Earn daily interest on locked funds
+- **Automatic savings** - 5% of earned interest goes to a savings account that unlocks every 30 days
 
 ### Prerequisites
 
@@ -14,7 +18,7 @@ Before running the application, you need the following installed:
 
 ### Step 1: Generate New Private Key and Address
 
-To start, you’ll need to generate a new private key and wallet address. This can be done using the `generateKeys.js` script.
+To start, you'll need to generate a new private key and wallet address. This can be done using the `generateKeys.js` script.
 
 1. Create a new wallet by running the following command in your terminal:
    ```bash
@@ -71,65 +75,153 @@ To start, you’ll need to generate a new private key and wallet address. This c
    You will be prompted to enter one of the following commands:
 
    - **approve [amount]**: Approve a specified amount of USDT for locking.
-   - **lock [amount]**: Lock a specified amount of USDT for 30 days.
-   - **redeem [amount]**: Redeem a specified amount of USDT (if it’s unlocked).
-   - **status**: Check the locked amount and lock time status.
-
-   Example usage:
-   ```bash
-   Enter command (approve, lock [amount], redeem, status): approve 100
-   ```
+   - **lock [amount] [days] [interest_rate]**: Lock tokens with custom duration and interest rate.
+   - **list**: List all your lock instances.
+   - **claim [lock_index]**: Claim accumulated interest from a specific lock.
+   - **withdraw [lock_index]**: Withdraw tokens from a specific lock (after unlock time).
+   - **withdraw-savings**: Withdraw accumulated savings (unlocks every 30 days).
+   - **status**: Check detailed status of all locks and savings.
+   - **help**: Display all available commands.
 
 ### Example Commands
 
 - **Approve tokens**: Approve a specified amount of USDT to be used by the TokenLock contract.
   ```bash
-  Enter command (approve, lock [amount], redeem, status): approve 100
+  Enter command: approve 1000
   ```
   Output:
   ```bash
-  Approving 100 USDT for TokenLock contract...
+  Approving 1000 USDT for TokenLock contract...
   Approval transaction hash: 0xabc123...
-  Approval of 100 USDT successful!
+  Approval successful!
   ```
 
-- **Lock tokens**: Lock a specified amount of USDT for 30 days.
+- **Lock tokens with custom duration and interest**: Lock 100 USDT for 30 days with 0.5% daily interest.
   ```bash
-  Enter command (approve, lock [amount], redeem, status): lock 100
+  Enter command: lock 100 30 50
+  ```
+  Note: Interest rate is in basis points (100 = 1%, 50 = 0.5%, 10 = 0.1%)
+  
+  Output:
+  ```bash
+  Locking 100 USDT for 30 days with 0.5% daily interest...
+  Lock transaction hash: 0xdef456...
+  Successfully locked 100 USDT!
+  ```
+
+- **List all locks**: View all your lock instances.
+  ```bash
+  Enter command: list
   ```
   Output:
   ```bash
-  Locking 100 USDT for 30 days...
-  Locking successful!
+  Total locks: 2
+
+  --- Lock #0 ---
+  Status: Active (Locked)
+  Amount: 100.0 USDT
+  Daily Interest Rate: 0.5%
+  Locked at: 11/13/2025, 3:30:00 PM
+  Unlocks at: 12/13/2025, 3:30:00 PM
+  Pending Interest (claimable): 2.5 USDT
+  Pending Savings (5%): 0.125 USDT
+
+  --- Lock #1 ---
+  Status: Unlocked (Ready to withdraw)
+  Amount: 50.0 USDT
+  Daily Interest Rate: 1.0%
+  Locked at: 10/15/2025, 2:00:00 PM
+  Unlocks at: 11/14/2025, 2:00:00 PM
+  Pending Interest (claimable): 15.0 USDT
+  Pending Savings (5%): 0.75 USDT
   ```
 
-- **Redeem tokens**: Redeem a specified amount of USDT (after the lock period expires).
+- **Claim interest**: Claim accumulated interest from a specific lock.
   ```bash
-  Enter command (approve, lock [amount], redeem, status): redeem 100
+  Enter command: claim 0
   ```
   Output:
   ```bash
-  Redeeming 100 USDT...
-  Redeem successful!
+  Claiming interest from lock #0...
+  Claim transaction hash: 0xghi789...
+  Interest successfully claimed!
   ```
 
-- **Check status**: Check the locked amount and lock time status.
+- **Withdraw tokens**: Withdraw tokens from a specific lock (after unlock time expires).
   ```bash
-  Enter command (approve, lock [amount], redeem, status): status
+  Enter command: withdraw 1
   ```
   Output:
   ```bash
-  Locked Amount: 100 USDT
-  Lock Time Expiry: 12/02/2024, 02:45:30 PM
+  Withdrawing tokens from lock #1...
+  Withdraw transaction hash: 0xjkl012...
+  Tokens successfully withdrawn!
   ```
+
+- **Check status**: Check comprehensive status of all locks and savings.
+  ```bash
+  Enter command: status
+  ```
+  Output shows all locks plus savings account information:
+  ```bash
+  Total locks: 2
+  [Lock details...]
+
+  === Savings Account ===
+  Savings Balance: 5.25 USDT
+  Savings Unlock Time: 12/13/2025, 3:30:00 PM
+  Savings Status: Locked
+  ```
+
+- **Withdraw savings**: Withdraw your accumulated savings (available every 30 days).
+  ```bash
+  Enter command: withdraw-savings
+  ```
+  Output:
+  ```bash
+  Withdrawing savings...
+  Withdraw transaction hash: 0xmno345...
+  Savings successfully withdrawn!
+  ```
+
+### Key Features Explained
+
+1. **Custom Lock Duration**: You can now lock tokens for any number of days you choose, not just a fixed 30 days.
+
+2. **Multiple Locks**: Create multiple separate lock instances, each with its own amount, duration, and interest rate.
+
+3. **Daily Interest**: Each lock generates interest daily based on the rate you specify when creating the lock.
+   - Interest is calculated in basis points (100 = 1%)
+   - You can claim interest at any time without unlocking your principal
+
+4. **Automatic Savings**: 
+   - 5% of all earned interest automatically goes to a savings account
+   - Savings unlock every 30 days
+   - After withdrawal, savings automatically lock for another 30 days
+   - You can re-lock withdrawn savings by creating a new lock
+
+5. **Lock Management**:
+   - Track all locks with the `list` command
+   - Each lock shows its status, amount, interest rate, and pending interest
+   - Withdraw from specific locks after they unlock
 
 ### Step 5: Modify for Other EVM-Compatible Chains
 
 To use this code with other EVM-compatible chains:
 
 1. Change the `RPC_URL` in the `.env` file to the URL of your desired chain's RPC endpoint.
-2. Ensure that the `USDT_CONTRACT_ADDRESS` and `LOCK_ADDRESS` are valid for the network you're using. You may need to deploy the `TokenLock` contract on a different chain if it’s not already deployed.
+2. Deploy the updated `TokenLock` contract to your target chain and update the `LOCK_ADDRESS` in your `.env` file.
+3. Ensure that the `USDT_CONTRACT_ADDRESS` is valid for the network you're using.
+
+### Smart Contract Updates
+
+The smart contract has been enhanced with:
+- Support for multiple locks per user
+- Customizable lock duration
+- Daily interest calculation and claiming
+- Automatic 5% savings allocation
+- 30-day savings unlock period
 
 ### Conclusion
 
-You now have a fully functional CLI tool to interact with a smart contract that locks and redeems USDT tokens. Use the `approve`, `lock`, `redeem`, and `status` commands to manage your tokens on AssetChain or any compatible EVM chain.
+You now have a fully functional CLI tool with advanced features to interact with a smart contract that locks tokens, generates daily interest, and manages savings. The system provides flexibility to manage multiple locks simultaneously while automatically building a savings reserve.
