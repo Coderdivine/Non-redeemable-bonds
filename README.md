@@ -1,12 +1,12 @@
 ---
 
-# Enhanced TokenLock CLI: Advanced Fund Locking with Interest and Savings
+# Enhanced TokenLock CLI: Daily Withdrawal with Automatic Savings
 
-This project allows you to interact with an enhanced smart contract for locking USDT tokens on the AssetChain network with advanced features including:
+This project allows you to interact with a smart contract for locking USDT tokens on the AssetChain network with the following features:
 - **Custom lock duration** - Specify how long you want to lock your funds
 - **Multiple locks** - Create and manage multiple lock instances simultaneously
-- **Daily interest** - Earn daily interest on locked funds
-- **Automatic savings** - 5% of earned interest goes to a savings account that unlocks every 30 days
+- **Daily withdrawals** - Withdraw a fixed percentage of your locked funds daily
+- **Automatic savings** - 5% of locked amount and all withdrawals automatically goes to savings that unlocks every 30 days
 
 ### Prerequisites
 
@@ -75,10 +75,10 @@ To start, you'll need to generate a new private key and wallet address. This can
    You will be prompted to enter one of the following commands:
 
    - **approve [amount]**: Approve a specified amount of USDT for locking.
-   - **lock [amount] [days] [interest_rate]**: Lock tokens with custom duration and interest rate.
+   - **lock [amount] [days] [withdrawal_rate]**: Lock tokens with custom duration and daily withdrawal rate.
    - **list**: List all your lock instances.
-   - **claim [lock_index]**: Claim accumulated interest from a specific lock.
-   - **withdraw [lock_index]**: Withdraw tokens from a specific lock (after unlock time).
+   - **withdraw-daily [lock_index]**: Withdraw daily allowance from a specific lock.
+   - **withdraw [lock_index]**: Withdraw remaining tokens from a specific lock (after unlock time).
    - **withdraw-savings**: Withdraw accumulated savings (unlocks every 30 days).
    - **status**: Check detailed status of all locks and savings.
    - **help**: Display all available commands.
@@ -96,17 +96,19 @@ To start, you'll need to generate a new private key and wallet address. This can
   Approval successful!
   ```
 
-- **Lock tokens with custom duration and interest**: Lock 100 USDT for 30 days with 0.5% daily interest.
+- **Lock tokens with custom duration and daily withdrawal rate**: Lock 100 USDT for 30 days with 7% daily withdrawal rate.
   ```bash
-  Enter command: lock 100 30 50
+  Enter command: lock 100 30 700
   ```
-  Note: Interest rate is in basis points (100 = 1%, 50 = 0.5%, 10 = 0.1%)
+  Note: Withdrawal rate is in basis points (100 = 1%, 700 = 7%, 1000 = 10%)
   
   Output:
   ```bash
-  Locking 100 USDT for 30 days with 0.5% daily interest...
+  Locking 100 USDT for 30 days with 7% daily withdrawal rate...
+  Note: 5% of locked amount (5 USDT) goes to savings immediately.
   Lock transaction hash: 0xdef456...
   Successfully locked 100 USDT!
+  Locked amount available for daily withdrawals: 95 USDT
   ```
 
 - **List all locks**: View all your lock instances.
@@ -119,32 +121,39 @@ To start, you'll need to generate a new private key and wallet address. This can
 
   --- Lock #0 ---
   Status: Active (Locked)
-  Amount: 100.0 USDT
-  Daily Interest Rate: 0.5%
+  Original Locked Amount: 95.0 USDT
+  Total Withdrawn: 13.3 USDT
+  Remaining Balance: 81.7 USDT
+  Daily Withdrawal Rate: 7%
   Locked at: 11/13/2025, 3:30:00 PM
   Unlocks at: 12/13/2025, 3:30:00 PM
-  Pending Interest (claimable): 2.5 USDT
-  Pending Savings (5%): 0.125 USDT
+  Available to Withdraw Now: 6.65 USDT
+    - You receive: 6.3175 USDT
+    - Goes to savings (5%): 0.3325 USDT
 
   --- Lock #1 ---
   Status: Unlocked (Ready to withdraw)
-  Amount: 50.0 USDT
-  Daily Interest Rate: 1.0%
+  Original Locked Amount: 47.5 USDT
+  Total Withdrawn: 14.25 USDT
+  Remaining Balance: 33.25 USDT
+  Daily Withdrawal Rate: 10%
   Locked at: 10/15/2025, 2:00:00 PM
   Unlocks at: 11/14/2025, 2:00:00 PM
-  Pending Interest (claimable): 15.0 USDT
-  Pending Savings (5%): 0.75 USDT
+  Available to Withdraw Now: 14.25 USDT
+    - You receive: 13.5375 USDT
+    - Goes to savings (5%): 0.7125 USDT
   ```
 
-- **Claim interest**: Claim accumulated interest from a specific lock.
+- **Withdraw daily allowance**: Withdraw daily allowance from a specific lock.
   ```bash
-  Enter command: claim 0
+  Enter command: withdraw-daily 0
   ```
   Output:
   ```bash
-  Claiming interest from lock #0...
-  Claim transaction hash: 0xghi789...
-  Interest successfully claimed!
+  Withdrawing daily allowance from lock #0...
+  Withdrawal transaction hash: 0xghi789...
+  Daily withdrawal successful!
+  Note: 5% of the withdrawal was added to your savings.
   ```
 
 - **Withdraw tokens**: Withdraw tokens from a specific lock (after unlock time expires).
@@ -186,24 +195,26 @@ To start, you'll need to generate a new private key and wallet address. This can
 
 ### Key Features Explained
 
-1. **Custom Lock Duration**: You can now lock tokens for any number of days you choose, not just a fixed 30 days.
+1. **Custom Lock Duration**: You can lock tokens for any number of days you choose.
 
-2. **Multiple Locks**: Create multiple separate lock instances, each with its own amount, duration, and interest rate.
+2. **Multiple Locks**: Create multiple separate lock instances, each with its own amount, duration, and withdrawal rate.
 
-3. **Daily Interest**: Each lock generates interest daily based on the rate you specify when creating the lock.
-   - Interest is calculated in basis points (100 = 1%)
-   - You can claim interest at any time without unlocking your principal
+3. **Daily Withdrawals**: Each lock allows you to withdraw a percentage of your locked funds daily based on the rate you specify when creating the lock.
+   - Withdrawal rate is specified in basis points (100 = 1%, 700 = 7%)
+   - You can withdraw your daily allowance at any time
+   - Example: Lock $100 with 7% daily rate = withdraw $7 daily (95% to you, 5% to savings)
 
 4. **Automatic Savings**: 
-   - 5% of all earned interest automatically goes to a savings account
+   - 5% of your locked amount goes to savings immediately when you create a lock
+   - 5% of all daily withdrawals automatically goes to a savings account
    - Savings unlock every 30 days
    - After withdrawal, savings automatically lock for another 30 days
-   - You can re-lock withdrawn savings by creating a new lock
 
 5. **Lock Management**:
    - Track all locks with the `list` command
-   - Each lock shows its status, amount, interest rate, and pending interest
-   - Withdraw from specific locks after they unlock
+   - Each lock shows its status, amount, withdrawal rate, and available withdrawal
+   - Withdraw remaining balance from specific locks after they unlock
+   - The lock period protects your principal from being fully withdrawn immediately
 
 ### Step 5: Modify for Other EVM-Compatible Chains
 
@@ -218,10 +229,15 @@ To use this code with other EVM-compatible chains:
 The smart contract has been enhanced with:
 - Support for multiple locks per user
 - Customizable lock duration
-- Daily interest calculation and claiming
-- Automatic 5% savings allocation
+- Daily withdrawal allowance based on specified percentage
+- Automatic 5% savings allocation on lock creation and every withdrawal
 - 30-day savings unlock period
+- Tracking of total withdrawn amounts per lock
 
 ### Conclusion
 
-You now have a fully functional CLI tool with advanced features to interact with a smart contract that locks tokens, generates daily interest, and manages savings. The system provides flexibility to manage multiple locks simultaneously while automatically building a savings reserve.
+You now have a fully functional CLI tool to interact with a smart contract that locks tokens with daily withdrawal capabilities and automatic savings. The system allows you to:
+- Lock funds with a specified daily withdrawal percentage (e.g., 7% daily)
+- Withdraw your daily allowance as needed
+- Automatically build savings from 5% of all activities
+- Manage multiple locks simultaneously

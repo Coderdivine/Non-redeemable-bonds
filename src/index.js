@@ -32,15 +32,17 @@ async function approveTokens(amount) {
     }
 }
 
-async function lockTokens(amount, days, interestRate) {
+async function lockTokens(amount, days, withdrawalRate) {
     try {
         const dec = await getDecimals(usdtContract);
         const lockAmount = ethers.parseUnits(amount, dec);
-        console.log(`Locking ${amount} USDT for ${days} days with ${interestRate/100}% daily interest...`);
-        const tx = await tokenLockContract.lockTokens(lockAmount, days, interestRate);
+        console.log(`Locking ${amount} USDT for ${days} days with ${withdrawalRate/100}% daily withdrawal rate...`);
+        console.log(`Note: 5% of locked amount (${amount * 0.05} USDT) goes to savings immediately.`);
+        const tx = await tokenLockContract.lockTokens(lockAmount, days, withdrawalRate);
         console.log("Lock transaction hash:", tx.hash);
         await tx.wait();
         console.log(`Successfully locked ${amount} USDT!`);
+        console.log(`Locked amount available for daily withdrawals: ${amount * 0.95} USDT`);
     } catch (error) {
         console.error("Error locking tokens:", error.message);
     }
@@ -58,15 +60,16 @@ async function withdrawTokens(lockIndex) {
     }
 }
 
-async function claimInterest(lockIndex) {
+async function withdrawDaily(lockIndex) {
     try {
-        console.log(`Claiming interest from lock #${lockIndex}...`);
-        const tx = await tokenLockContract.claimInterest(lockIndex);
-        console.log("Claim transaction hash:", tx.hash);
+        console.log(`Withdrawing daily allowance from lock #${lockIndex}...`);
+        const tx = await tokenLockContract.withdrawDaily(lockIndex);
+        console.log("Withdrawal transaction hash:", tx.hash);
         await tx.wait();
-        console.log("Interest successfully claimed!");
+        console.log("Daily withdrawal successful!");
+        console.log("Note: 5% of the withdrawal was added to your savings.");
     } catch (error) {
-        console.error("Error claiming interest:", error.message);
+        console.error("Error withdrawing daily allowance:", error.message);
     }
 }
 
@@ -95,7 +98,7 @@ async function listLocks() {
         const decimals = await getDecimals(usdtContract);
         
         for (let i = 0; i < locksCount; i++) {
-            const [amount, lockTime, unlockTime, dailyInterestRate, lastClaimTime, active] = 
+            const [amount, lockTime, unlockTime, dailyWithdrawalRate, lastWithdrawTime, totalWithdrawn, active] = 
                 await tokenLockContract.getLockDetails(wallet.address, i);
             
             const lockTimeDate = new Date(Number(lockTime) * 1000);
@@ -104,16 +107,20 @@ async function listLocks() {
             const isUnlocked = now >= Number(unlockTime) * 1000;
             
             console.log(`\n--- Lock #${i} ---`);
-            console.log(`Status: ${active ? (isUnlocked ? 'Unlocked (Ready to withdraw)' : 'Active (Locked)') : 'Withdrawn'}`);
-            console.log(`Amount: ${ethers.formatUnits(amount, decimals)} USDT`);
-            console.log(`Daily Interest Rate: ${Number(dailyInterestRate)/100}%`);
+            console.log(`Status: ${active ? (isUnlocked ? 'Unlocked (Ready to withdraw)' : 'Active (Locked)') : 'Fully Withdrawn'}`);
+            console.log(`Original Locked Amount: ${ethers.formatUnits(amount, decimals)} USDT`);
+            console.log(`Total Withdrawn: ${ethers.formatUnits(totalWithdrawn, decimals)} USDT`);
+            console.log(`Remaining Balance: ${ethers.formatUnits(amount - totalWithdrawn, decimals)} USDT`);
+            console.log(`Daily Withdrawal Rate: ${Number(dailyWithdrawalRate)/100}%`);
             console.log(`Locked at: ${lockTimeDate.toLocaleString()}`);
             console.log(`Unlocks at: ${unlockTimeDate.toLocaleString()}`);
             
             if (active) {
-                const [mainInterest, savingsInterest] = await tokenLockContract.getPendingInterest(wallet.address, i);
-                console.log(`Pending Interest (claimable): ${ethers.formatUnits(mainInterest, decimals)} USDT`);
-                console.log(`Pending Savings (5%): ${ethers.formatUnits(savingsInterest, decimals)} USDT`);
+                const [mainWithdrawal, savingsWithdrawal] = await tokenLockContract.getAvailableWithdrawal(wallet.address, i);
+                const totalAvailable = mainWithdrawal + savingsWithdrawal;
+                console.log(`Available to Withdraw Now: ${ethers.formatUnits(totalAvailable, decimals)} USDT`);
+                console.log(`  - You receive: ${ethers.formatUnits(mainWithdrawal, decimals)} USDT`);
+                console.log(`  - Goes to savings (5%): ${ethers.formatUnits(savingsWithdrawal, decimals)} USDT`);
             }
         }
     } catch (error) {
@@ -150,12 +157,13 @@ async function checkStatus() {
 async function showHelp() {
     console.log("\n=== Available Commands ===");
     console.log("approve [amount] - Approve USDT for the TokenLock contract");
-    console.log("lock [amount] [days] [interest_rate] - Lock tokens with custom duration and interest rate");
-    console.log("  Example: lock 100 30 50 (lock 100 USDT for 30 days with 0.5% daily interest)");
-    console.log("  Interest rate is in basis points (100 = 1%, 50 = 0.5%)");
+    console.log("lock [amount] [days] [withdrawal_rate] - Lock tokens with custom duration and daily withdrawal rate");
+    console.log("  Example: lock 100 30 700 (lock 100 USDT for 30 days with 7% daily withdrawal rate)");
+    console.log("  Withdrawal rate is in basis points (100 = 1%, 700 = 7%)");
+    console.log("  Note: 5% of locked amount goes to savings immediately");
     console.log("list - List all your locks");
-    console.log("claim [lock_index] - Claim interest from a specific lock");
-    console.log("withdraw [lock_index] - Withdraw tokens from a specific lock (after unlock time)");
+    console.log("withdraw-daily [lock_index] - Withdraw daily allowance from a specific lock");
+    console.log("withdraw [lock_index] - Withdraw remaining tokens from a specific lock (after unlock time)");
     console.log("withdraw-savings - Withdraw your savings (unlocked every 30 days)");
     console.log("status - Check status of all locks and savings");
     console.log("help - Show this help message");
@@ -180,15 +188,15 @@ const command = readline.question("Enter command: ").trim().toLowerCase();
     } else if (cmd === "lock") {
         const amount = parts[1];
         const days = parts[2];
-        const interestRate = parts[3];
-        if (!amount || !days || !interestRate) {
-            console.log("Please specify amount, duration (days), and interest rate.");
-            console.log("Usage: lock [amount] [days] [interest_rate]");
-            console.log("Example: lock 100 30 50 (lock 100 USDT for 30 days with 0.5% daily interest)");
-            console.log("Interest rate is in basis points (100 = 1%, 50 = 0.5%)");
+        const withdrawalRate = parts[3];
+        if (!amount || !days || !withdrawalRate) {
+            console.log("Please specify amount, duration (days), and daily withdrawal rate.");
+            console.log("Usage: lock [amount] [days] [withdrawal_rate]");
+            console.log("Example: lock 100 30 700 (lock 100 USDT for 30 days with 7% daily withdrawal rate)");
+            console.log("Withdrawal rate is in basis points (100 = 1%, 700 = 7%)");
             return;
         }
-        await lockTokens(amount, days, interestRate);
+        await lockTokens(amount, days, withdrawalRate);
     } else if (cmd === "withdraw") {
         const lockIndex = parts[1];
         if (lockIndex === undefined) {
@@ -198,14 +206,14 @@ const command = readline.question("Enter command: ").trim().toLowerCase();
             return;
         }
         await withdrawTokens(lockIndex);
-    } else if (cmd === "claim") {
+    } else if (cmd === "withdraw-daily") {
         const lockIndex = parts[1];
         if (lockIndex === undefined) {
-            console.log("Please specify the lock index to claim interest from.");
-            console.log("Usage: claim [lock_index]");
+            console.log("Please specify the lock index to withdraw daily allowance from.");
+            console.log("Usage: withdraw-daily [lock_index]");
             return;
         }
-        await claimInterest(lockIndex);
+        await withdrawDaily(lockIndex);
     } else if (cmd === "withdraw-savings") {
         await withdrawSavings();
     } else if (cmd === "list") {

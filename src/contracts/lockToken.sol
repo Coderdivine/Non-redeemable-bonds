@@ -15,15 +15,16 @@ contract TokenLock {
         uint256 amount;
         uint256 lockTime;
         uint256 unlockTime;
-        uint256 dailyInterestRate; // in basis points (100 = 1%)
-        uint256 lastClaimTime;
+        uint256 dailyWithdrawalRate; // in basis points (100 = 1%)
+        uint256 lastWithdrawTime;
+        uint256 totalWithdrawn;
         bool active;
     }
     
     // Multiple locks per user
     mapping(address => Lock[]) public userLocks;
     
-    // Savings account - 5% of daily interest goes here
+    // Savings account - 5% of withdrawals go here
     mapping(address => uint256) public savingsBalance;
     mapping(address => uint256) public savingsUnlockTime;
 
@@ -31,23 +32,29 @@ contract TokenLock {
         usdtToken = IERC20(_usdtAddress);
     }
 
-    // Lock tokens with custom duration and interest rate
-    function lockTokens(uint256 amount, uint256 durationInDays, uint256 dailyInterestRate) external {
+    // Lock tokens with custom duration and daily withdrawal percentage
+    function lockTokens(uint256 amount, uint256 durationInDays, uint256 dailyWithdrawalRate) external {
         require(amount > 0, "Amount must be greater than 0");
         require(durationInDays > 0, "Duration must be greater than 0");
-        require(dailyInterestRate > 0 && dailyInterestRate <= 1000, "Interest rate must be between 0.01% and 10%");
+        require(dailyWithdrawalRate > 0 && dailyWithdrawalRate <= 10000, "Withdrawal rate must be between 0.01% and 100%");
         require(usdtToken.transferFrom(msg.sender, address(this), amount), "Transfer failed");
 
+        // Automatically deduct 5% for savings on lock
+        uint256 savingsAmount = (amount * 5) / 100;
+        uint256 lockedAmount = amount - savingsAmount;
+        
         Lock memory newLock = Lock({
-            amount: amount,
+            amount: lockedAmount,
             lockTime: block.timestamp,
             unlockTime: block.timestamp + (durationInDays * 1 days),
-            dailyInterestRate: dailyInterestRate,
-            lastClaimTime: block.timestamp,
+            dailyWithdrawalRate: dailyWithdrawalRate,
+            lastWithdrawTime: block.timestamp,
+            totalWithdrawn: 0,
             active: true
         });
         
         userLocks[msg.sender].push(newLock);
+        savingsBalance[msg.sender] += savingsAmount;
         
         // Initialize savings unlock time if not set
         if (savingsUnlockTime[msg.sender] == 0) {
@@ -55,8 +62,8 @@ contract TokenLock {
         }
     }
 
-    // Calculate pending interest for a specific lock
-    function getPendingInterest(address user, uint256 lockIndex) public view returns (uint256 mainInterest, uint256 savingsInterest) {
+    // Calculate available daily withdrawal for a specific lock
+    function getAvailableWithdrawal(address user, uint256 lockIndex) public view returns (uint256 mainWithdrawal, uint256 savingsWithdrawal) {
         require(lockIndex < userLocks[user].length, "Invalid lock index");
         Lock memory lock = userLocks[user][lockIndex];
         
@@ -64,58 +71,74 @@ contract TokenLock {
             return (0, 0);
         }
         
-        uint256 daysPassed = (block.timestamp - lock.lastClaimTime) / 1 days;
+        uint256 daysPassed = (block.timestamp - lock.lastWithdrawTime) / 1 days;
         if (daysPassed == 0) {
             return (0, 0);
         }
         
-        // Calculate total daily interest
-        uint256 totalInterest = (lock.amount * lock.dailyInterestRate * daysPassed) / 10000;
+        // Calculate total withdrawable amount based on days passed
+        uint256 totalWithdrawable = (lock.amount * lock.dailyWithdrawalRate * daysPassed) / 10000;
+        
+        // Ensure we don't withdraw more than remaining balance
+        uint256 remainingBalance = lock.amount - lock.totalWithdrawn;
+        if (totalWithdrawable > remainingBalance) {
+            totalWithdrawable = remainingBalance;
+        }
         
         // 5% goes to savings
-        savingsInterest = (totalInterest * 5) / 100;
-        mainInterest = totalInterest - savingsInterest;
+        savingsWithdrawal = (totalWithdrawable * 5) / 100;
+        mainWithdrawal = totalWithdrawable - savingsWithdrawal;
         
-        return (mainInterest, savingsInterest);
+        return (mainWithdrawal, savingsWithdrawal);
     }
 
-    // Claim interest for a specific lock
-    function claimInterest(uint256 lockIndex) external {
+    // Withdraw daily allowance from a specific lock
+    function withdrawDaily(uint256 lockIndex) external {
         require(lockIndex < userLocks[msg.sender].length, "Invalid lock index");
         Lock storage lock = userLocks[msg.sender][lockIndex];
         require(lock.active, "Lock is not active");
         
-        (uint256 mainInterest, uint256 savingsInterest) = getPendingInterest(msg.sender, lockIndex);
-        require(mainInterest > 0 || savingsInterest > 0, "No interest to claim");
+        (uint256 mainWithdrawal, uint256 savingsWithdrawal) = getAvailableWithdrawal(msg.sender, lockIndex);
+        require(mainWithdrawal > 0 || savingsWithdrawal > 0, "No withdrawal available yet");
         
-        lock.lastClaimTime = block.timestamp;
-        savingsBalance[msg.sender] += savingsInterest;
+        lock.lastWithdrawTime = block.timestamp;
+        lock.totalWithdrawn += mainWithdrawal + savingsWithdrawal;
+        savingsBalance[msg.sender] += savingsWithdrawal;
         
-        if (mainInterest > 0) {
-            require(usdtToken.transfer(msg.sender, mainInterest), "Transfer failed");
+        // Check if lock is fully withdrawn
+        if (lock.totalWithdrawn >= lock.amount) {
+            lock.active = false;
+        }
+        
+        if (mainWithdrawal > 0) {
+            require(usdtToken.transfer(msg.sender, mainWithdrawal), "Transfer failed");
         }
     }
 
-    // Withdraw tokens from a specific lock
+    // Withdraw remaining tokens from a specific lock after unlock time
     function withdrawTokens(uint256 lockIndex) external {
         require(lockIndex < userLocks[msg.sender].length, "Invalid lock index");
         Lock storage lock = userLocks[msg.sender][lockIndex];
         
         require(lock.active, "Lock is not active");
         require(block.timestamp >= lock.unlockTime, "Tokens are still locked");
-        require(lock.amount > 0, "No tokens to withdraw");
         
-        // Claim any pending interest first
-        (uint256 mainInterest, uint256 savingsInterest) = getPendingInterest(msg.sender, lockIndex);
-        if (mainInterest > 0 || savingsInterest > 0) {
-            savingsBalance[msg.sender] += savingsInterest;
-        }
+        uint256 remainingAmount = lock.amount - lock.totalWithdrawn;
+        require(remainingAmount > 0, "No tokens to withdraw");
         
-        uint256 totalToTransfer = lock.amount + mainInterest;
+        // Calculate any pending daily withdrawals first
+        (uint256 mainWithdrawal, uint256 savingsWithdrawal) = getAvailableWithdrawal(msg.sender, lockIndex);
+        savingsBalance[msg.sender] += savingsWithdrawal;
+        
+        // Deduct the 5% savings from remaining amount
+        uint256 savingsFromRemaining = (remainingAmount * 5) / 100;
+        uint256 toTransfer = remainingAmount - savingsFromRemaining + mainWithdrawal;
+        
+        savingsBalance[msg.sender] += savingsFromRemaining;
         lock.active = false;
-        lock.amount = 0;
+        lock.totalWithdrawn = lock.amount;
         
-        require(usdtToken.transfer(msg.sender, totalToTransfer), "Transfer failed");
+        require(usdtToken.transfer(msg.sender, toTransfer), "Transfer failed");
     }
 
     // Withdraw savings (unlocked every 30 days)
@@ -140,8 +163,9 @@ contract TokenLock {
         uint256 amount,
         uint256 lockTime,
         uint256 unlockTime,
-        uint256 dailyInterestRate,
-        uint256 lastClaimTime,
+        uint256 dailyWithdrawalRate,
+        uint256 lastWithdrawTime,
+        uint256 totalWithdrawn,
         bool active
     ) {
         require(lockIndex < userLocks[user].length, "Invalid lock index");
@@ -150,8 +174,9 @@ contract TokenLock {
             lock.amount,
             lock.lockTime,
             lock.unlockTime,
-            lock.dailyInterestRate,
-            lock.lastClaimTime,
+            lock.dailyWithdrawalRate,
+            lock.lastWithdrawTime,
+            lock.totalWithdrawn,
             lock.active
         );
     }
