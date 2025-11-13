@@ -32,12 +32,12 @@ async function approveTokens(amount) {
     }
 }
 
-async function lockTokens(amount) {
+async function lockTokens(amount, days, interestRate) {
     try {
         const dec = await getDecimals(usdtContract);
         const lockAmount = ethers.parseUnits(amount, dec);
-        console.log(`Locking ${amount} USDT in the TokenLock contract...`);
-        const tx = await tokenLockContract.lockTokens(lockAmount);
+        console.log(`Locking ${amount} USDT for ${days} days with ${interestRate/100}% daily interest...`);
+        const tx = await tokenLockContract.lockTokens(lockAmount, days, interestRate);
         console.log("Lock transaction hash:", tx.hash);
         await tx.wait();
         console.log(`Successfully locked ${amount} USDT!`);
@@ -46,62 +46,175 @@ async function lockTokens(amount) {
     }
 }
 
-async function redeemTokens(amount) {
+async function withdrawTokens(lockIndex) {
     try {
-        if (amount) {
-            console.error("Partial withdrawal is not supported in the contract. Ignoring amount...");
-        }
-        console.log("Redeeming all locked USDT...");
-        const tx = await tokenLockContract.withdrawTokens();
-        console.log("Redeem transaction hash:", tx.hash);
+        console.log(`Withdrawing tokens from lock #${lockIndex}...`);
+        const tx = await tokenLockContract.withdrawTokens(lockIndex);
+        console.log("Withdraw transaction hash:", tx.hash);
         await tx.wait();
-        console.log("Tokens successfully redeemed!");
+        console.log("Tokens successfully withdrawn!");
     } catch (error) {
-        console.error("Error redeeming tokens:", error.message);
+        console.error("Error withdrawing tokens:", error.message);
+    }
+}
+
+async function claimInterest(lockIndex) {
+    try {
+        console.log(`Claiming interest from lock #${lockIndex}...`);
+        const tx = await tokenLockContract.claimInterest(lockIndex);
+        console.log("Claim transaction hash:", tx.hash);
+        await tx.wait();
+        console.log("Interest successfully claimed!");
+    } catch (error) {
+        console.error("Error claiming interest:", error.message);
+    }
+}
+
+async function withdrawSavings() {
+    try {
+        console.log("Withdrawing savings...");
+        const tx = await tokenLockContract.withdrawSavings();
+        console.log("Withdraw transaction hash:", tx.hash);
+        await tx.wait();
+        console.log("Savings successfully withdrawn!");
+    } catch (error) {
+        console.error("Error withdrawing savings:", error.message);
+    }
+}
+
+async function listLocks() {
+    try {
+        const locksCount = await tokenLockContract.getUserLocksCount(wallet.address);
+        console.log(`\nTotal locks: ${locksCount}`);
+        
+        if (locksCount == 0) {
+            console.log("No locks found.");
+            return;
+        }
+
+        const decimals = await getDecimals(usdtContract);
+        
+        for (let i = 0; i < locksCount; i++) {
+            const [amount, lockTime, unlockTime, dailyInterestRate, lastClaimTime, active] = 
+                await tokenLockContract.getLockDetails(wallet.address, i);
+            
+            const lockTimeDate = new Date(Number(lockTime) * 1000);
+            const unlockTimeDate = new Date(Number(unlockTime) * 1000);
+            const now = Date.now();
+            const isUnlocked = now >= Number(unlockTime) * 1000;
+            
+            console.log(`\n--- Lock #${i} ---`);
+            console.log(`Status: ${active ? (isUnlocked ? 'Unlocked (Ready to withdraw)' : 'Active (Locked)') : 'Withdrawn'}`);
+            console.log(`Amount: ${ethers.formatUnits(amount, decimals)} USDT`);
+            console.log(`Daily Interest Rate: ${Number(dailyInterestRate)/100}%`);
+            console.log(`Locked at: ${lockTimeDate.toLocaleString()}`);
+            console.log(`Unlocks at: ${unlockTimeDate.toLocaleString()}`);
+            
+            if (active) {
+                const [mainInterest, savingsInterest] = await tokenLockContract.getPendingInterest(wallet.address, i);
+                console.log(`Pending Interest (claimable): ${ethers.formatUnits(mainInterest, decimals)} USDT`);
+                console.log(`Pending Savings (5%): ${ethers.formatUnits(savingsInterest, decimals)} USDT`);
+            }
+        }
+    } catch (error) {
+        console.error("Error listing locks:", error.message);
     }
 }
 
 async function checkStatus() {
     try {
-        const lockedAmount = await tokenLockContract.lockedAmount(wallet.address);
-        const lockTime = await tokenLockContract.lockTime(wallet.address);
-
+        await listLocks();
+        
+        // Show savings status
+        console.log("\n=== Savings Account ===");
+        const savingsBalance = await tokenLockContract.savingsBalance(wallet.address);
+        const savingsUnlockTime = await tokenLockContract.savingsUnlockTime(wallet.address);
         const decimals = await getDecimals(usdtContract);
-
-        // Format the locked amount using the token's decimals
-        console.log(`Locked Amount: ${ethers.formatUnits(lockedAmount, decimals)} USDT`);
-
-        // Convert lockTime to a number for use with Date
-        const lockTimeInMillis = Number(lockTime) * 1000;
-        console.log(`Lock Time Expiry: ${new Date(lockTimeInMillis).toLocaleString()}`);
+        
+        console.log(`Savings Balance: ${ethers.formatUnits(savingsBalance, decimals)} USDT`);
+        
+        if (Number(savingsUnlockTime) > 0) {
+            const savingsUnlockDate = new Date(Number(savingsUnlockTime) * 1000);
+            const now = Date.now();
+            const isUnlocked = now >= Number(savingsUnlockTime) * 1000;
+            console.log(`Savings Unlock Time: ${savingsUnlockDate.toLocaleString()}`);
+            console.log(`Savings Status: ${isUnlocked ? 'Unlocked (Ready to withdraw)' : 'Locked'}`);
+        } else {
+            console.log("Savings unlock time: Not set (will be set when first lock is created)");
+        }
     } catch (error) {
         console.error("Error checking status:", error.message);
     }
 }
 
+async function showHelp() {
+    console.log("\n=== Available Commands ===");
+    console.log("approve [amount] - Approve USDT for the TokenLock contract");
+    console.log("lock [amount] [days] [interest_rate] - Lock tokens with custom duration and interest rate");
+    console.log("  Example: lock 100 30 50 (lock 100 USDT for 30 days with 0.5% daily interest)");
+    console.log("  Interest rate is in basis points (100 = 1%, 50 = 0.5%)");
+    console.log("list - List all your locks");
+    console.log("claim [lock_index] - Claim interest from a specific lock");
+    console.log("withdraw [lock_index] - Withdraw tokens from a specific lock (after unlock time)");
+    console.log("withdraw-savings - Withdraw your savings (unlocked every 30 days)");
+    console.log("status - Check status of all locks and savings");
+    console.log("help - Show this help message");
+    console.log("==========================\n");
+}
 
-const command = readline.question("Enter command (approve, lock [amount], redeem, status): ").trim().toLowerCase();
+
+const command = readline.question("Enter command: ").trim().toLowerCase();
 
 (async () => {
-    if (command.startsWith("approve")) {
-        const amount = command.split(" ")[1];
+    const parts = command.split(" ");
+    const cmd = parts[0];
+    
+    if (cmd === "approve") {
+        const amount = parts[1];
         if (!amount) {
             console.log("Please specify an amount to approve.");
+            console.log("Usage: approve [amount]");
             return;
         }
         await approveTokens(amount);
-    } else if (command.startsWith("lock")) {
-        const amount = command.split(" ")[1];
-        if (!amount) {
-            console.log("Please specify an amount to lock.");
+    } else if (cmd === "lock") {
+        const amount = parts[1];
+        const days = parts[2];
+        const interestRate = parts[3];
+        if (!amount || !days || !interestRate) {
+            console.log("Please specify amount, duration (days), and interest rate.");
+            console.log("Usage: lock [amount] [days] [interest_rate]");
+            console.log("Example: lock 100 30 50 (lock 100 USDT for 30 days with 0.5% daily interest)");
+            console.log("Interest rate is in basis points (100 = 1%, 50 = 0.5%)");
             return;
         }
-        await lockTokens(amount);
-    } else if (command.startsWith("redeem")) {
-        await redeemTokens();
-    } else if (command.startsWith("status")) {
+        await lockTokens(amount, days, interestRate);
+    } else if (cmd === "withdraw") {
+        const lockIndex = parts[1];
+        if (lockIndex === undefined) {
+            console.log("Please specify the lock index to withdraw from.");
+            console.log("Usage: withdraw [lock_index]");
+            console.log("Use 'list' command to see your locks and their indices.");
+            return;
+        }
+        await withdrawTokens(lockIndex);
+    } else if (cmd === "claim") {
+        const lockIndex = parts[1];
+        if (lockIndex === undefined) {
+            console.log("Please specify the lock index to claim interest from.");
+            console.log("Usage: claim [lock_index]");
+            return;
+        }
+        await claimInterest(lockIndex);
+    } else if (cmd === "withdraw-savings") {
+        await withdrawSavings();
+    } else if (cmd === "list") {
+        await listLocks();
+    } else if (cmd === "status") {
         await checkStatus();
+    } else if (cmd === "help") {
+        await showHelp();
     } else {
-        console.log("Invalid command. Available commands: approve [amount], lock [amount], redeem, status");
+        console.log("Invalid command. Type 'help' to see available commands.");
     }
 })();
